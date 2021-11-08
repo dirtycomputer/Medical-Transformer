@@ -1,0 +1,1 @@
+python train.py --train_dataset "./dataset/train/" --val_dataset "./dataset/test/" --direc "./result" --batch_size 4 --modelname "logo" --epoch 401 --save_freq 50 --learning_rate 0.0001 --imgsize 128
