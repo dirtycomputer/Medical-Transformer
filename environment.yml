@@ -130,5 +130,5 @@ dependencies:
 prefix: ~/anaconda3/envs/medt
 
 
-python train.py --train_dataset "../dataset/train" --val_dataset "../dataset/test" --direc '/Users/wangxinyuan/Desktop/Medical-Transformer/result' --batch_size 4 --epoch 400 --save_freq 10 --modelname "gatedaxialunet" --learning_rate 0.001 --imgsize 128 --gray "no"
+python train.py --train_dataset "./dataset/train" --val_dataset "./dataset/test" --direc '/Users/wangxinyuan/Desktop/Medical-Transformer/result' --batch_size 4 --epoch 400 --save_freq 10 --modelname "gatedaxialunet" --learning_rate 0.001 --imgsize 128 --gray "no"
 
