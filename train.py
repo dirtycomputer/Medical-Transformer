@@ -8,6 +8,7 @@ import torchvision
 from torch import nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 from torchvision.utils import save_image
 import torch.nn.functional as F
@@ -29,53 +30,76 @@ import timeit
 from torchsummary import summary
 
 
-
+#添加当前文件夹路径
 import sys
-sys.path.append("/Users/wangxinyuan/Desktop/Medical-Transformer")
+sys.path.append("/home/user2/WXY/medt/")
 
+#参数设置
 parser = argparse.ArgumentParser(description='MedT')
+#worker数目(16)
 parser.add_argument('-j', '--workers', default=16, type=int, metavar='N',
-                    help='number of data loading workers (default: 8)')
+                    help='number of data loading workers (default: 16)')
+#训练轮数(400)
 parser.add_argument('--epochs', default=400, type=int, metavar='N',
                     help='number of total epochs to run(default: 400)')
+#
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
+#batchsize(1)
 parser.add_argument('-b', '--batch_size', default=1, type=int,
                     metavar='N', help='batch size (default: 1)')
+#学习率(0.001)
 parser.add_argument('--learning_rate', default=1e-3, type=float,
                     metavar='LR', help='initial learning rate (default: 0.001)')
+#动量(0.9)
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
+#权重衰减
 parser.add_argument('--weight-decay', '--wd', default=1e-5, type=float,
                     metavar='W', help='weight decay (default: 1e-5)')
+#根路径
+parser.add_argument('--root_path', required=True,type=str)
+#训练数据集
 parser.add_argument('--train_dataset', required=True, type=str)
+#验证据集
 parser.add_argument('--val_dataset', type=str)
+#保存频率
 parser.add_argument('--save_freq', type=int,default = 10)
-
+#模型名字
 parser.add_argument('--modelname', default='MedT', type=str,
                     help='type of model')
-parser.add_argument('--cuda', default="on", type=str, 
+#是否使用CUDA
+parser.add_argument('--cuda', default="on", type=str,
                     help='switch on/off cuda option (default: off)')
+#是否使用图像增强
 parser.add_argument('--aug', default='off', type=str,
                     help='turn on img augmentation (default: False)')
+#是否适用预训练模型
 parser.add_argument('--load', default='default', type=str,
                     help='load a pretrained model')
+#保存模型
 parser.add_argument('--save', default='default', type=str,
                     help='save the model')
+#保存的文件夹
 parser.add_argument('--direc', default='./medt', type=str,
                     help='directory to save')
+#裁剪
 parser.add_argument('--crop', type=int, default=None)
+#图像大小
 parser.add_argument('--imgsize', type=int, default=None)
+#使用的设备
 parser.add_argument('--device', default='cuda', type=str)
+#是否为灰度图像
 parser.add_argument('--gray', default='no', type=str)
 
 args = parser.parse_args()
 gray_ = args.gray
 aug = args.aug
-direc = args.direc
+direc = args.root_path + args.direc
 modelname = args.modelname
 imgsize = args.imgsize
 
+#是否灰度处理
 if gray_ == "yes":
     from utils_gray import JointTransform2D, ImageToImage2D, Image2D
     imgchant = 1
@@ -83,16 +107,25 @@ else:
     from utils import JointTransform2D, ImageToImage2D, Image2D
     imgchant = 3
 
+#是否裁剪
 if args.crop is not None:
     crop = (args.crop, args.crop)
 else:
     crop = None
 
+
+writer = SummaryWriter("logs")
+
 tf_train = JointTransform2D(crop=crop, p_flip=0.5, color_jitter_params=None, long_mask=True)
 tf_val = JointTransform2D(crop=crop, p_flip=0, color_jitter_params=None, long_mask=True)
-train_dataset = ImageToImage2D(args.train_dataset, tf_train)
-val_dataset = ImageToImage2D(args.val_dataset, tf_val)
-predict_dataset = Image2D(args.val_dataset)
+
+train_dataset_path = args.root_path + args.train_dataset
+val_dataset_path = args.root_path + args.val_dataset
+
+train_dataset = ImageToImage2D(train_dataset_path, tf_train)
+val_dataset = ImageToImage2D(val_dataset_path, tf_val)
+
+predict_dataset = Image2D(val_dataset_path)
 dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False)
 valloader = DataLoader(val_dataset, 1, shuffle=True)
 
@@ -111,10 +144,10 @@ elif modelname == "logo":
 if torch.cuda.device_count() > 1:
   print("Let's use", torch.cuda.device_count(), "GPUs!")
   # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
-  model = nn.DataParallel(model,device_ids=[0,1]).cuda()
+  model = nn.DataParallel(model,device_ids=[0,1,2,3]).to(device)
 model.to(device)
 
-criterion = LogNLLLoss()
+criterion = LogNLLLoss().to(device)
 optimizer = torch.optim.Adam(list(model.parameters()), lr=args.learning_rate,
                              weight_decay=1e-5)
 
@@ -136,11 +169,12 @@ for epoch in range(args.epochs):
     
     for batch_idx, (X_batch, y_batch, *rest) in enumerate(dataloader):
 
-        
-        
 
+        writer.add_image("img",X_batch,epoch)
+        writer.add_image("mask", y_batch, epoch)
         X_batch = Variable(X_batch.to(device))
         y_batch = Variable(y_batch.to(device))
+
         
         # ===================forward=====================
         # summary(model, input_size=(3, 128, 128))
@@ -169,7 +203,7 @@ for epoch in range(args.epochs):
         epoch_running_loss += loss.item()
         
     # ===================log========================
-    print('epoch [{}/{}], loss:{:.4f}'
+    print('epoch [{}/{}], loss:{:.20f}'
           .format(epoch, args.epochs, epoch_running_loss/(batch_idx+1)))
 
     
@@ -224,4 +258,4 @@ for epoch in range(args.epochs):
         torch.save(model.state_dict(), direc+"final_model.pth")
             
 
-
+writer.close()
